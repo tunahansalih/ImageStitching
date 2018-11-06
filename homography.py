@@ -69,12 +69,14 @@ def warp(image, H):
     for x in range(image.shape[0]):
         for y in range(image.shape[1]):
             new_coordinate = new_coordinates[x, y] + [left_x_min_coordinate, left_y_min_coordinate]
-            if 0 <= int(new_coordinate[0]) < BLENDED_IMAGE_SIZE[0] and 0 <= int(new_coordinate[1]) < BLENDED_IMAGE_SIZE[1]:
+            if 0 <= int(new_coordinate[0]) < BLENDED_IMAGE_SIZE[0] and 0 <= int(new_coordinate[1]) < BLENDED_IMAGE_SIZE[
+                1]:
                 new_img[int(new_coordinate[0]), int(new_coordinate[1])] = image[x, y]
 
     corner_coordinates = np.float32(
         [[0, 0], [0, image.shape[1]], [image.shape[0], image.shape[1]], [image.shape[0], 0]]).reshape(-1, 1, 2)
-    new_corner_coordinates = cv2.perspectiveTransform(corner_coordinates, H)
+    new_corner_coordinates = cv2.perspectiveTransform(corner_coordinates, H) + [
+        [left_x_min_coordinate, left_y_min_coordinate]]
     return new_img.astype(np.uint8), new_corner_coordinates
 
 
@@ -89,10 +91,16 @@ def expand(img):
     new_img = np.zeros(BLENDED_IMAGE_SIZE)
     left_x_min_coordinate = int((BLENDED_IMAGE_SIZE[0] - img2.shape[0]) / 2)
     left_y_min_coordinate = int((BLENDED_IMAGE_SIZE[1] - img2.shape[1]) / 2)
+    right_x_max_coordinate = int((BLENDED_IMAGE_SIZE[0] + img2.shape[0]) / 2)
+    right_y_max_coordinate = int((BLENDED_IMAGE_SIZE[1] + img2.shape[1]) / 2)
+    new_img_corner_coordinates = np.float32([[left_x_min_coordinate, left_y_min_coordinate],
+                                             [left_x_min_coordinate, right_y_max_coordinate],
+                                             [right_x_max_coordinate, right_y_max_coordinate],
+                                             [right_x_max_coordinate, left_y_min_coordinate]]).reshape(-1, 1, 2)
     for x in range(img.shape[0]):
         for y in range(img.shape[1]):
             new_img[x + left_x_min_coordinate, y + left_y_min_coordinate] = img[x, y]
-    return new_img
+    return new_img.astype(np.uint8), new_img_corner_coordinates
 
 
 def blend(img1, img2):
@@ -107,6 +115,20 @@ def blend(img1, img2):
             else:
                 blended_image[x, y] = img2[x, y]
     return blended_image
+
+
+def find_range(*coordinates):
+    max_coordinates = [0, 0]
+    min_coordinates = [BLENDED_IMAGE_SIZE[0], BLENDED_IMAGE_SIZE[1]]
+
+    for coordinate in coordinates:
+        for c in coordinate:
+            max_coordinates[0] = min(np.int(max(c[0][0], max_coordinates[0]) + 0.5), BLENDED_IMAGE_SIZE[0])
+            max_coordinates[1] = min(np.int(max(c[0][1], max_coordinates[1]) + 0.5), BLENDED_IMAGE_SIZE[1])
+            min_coordinates[0] = max(np.int(min(c[0][0], min_coordinates[0]) - 0.5), 0)
+            min_coordinates[1] = max(np.int(min(c[0][1], min_coordinates[1]) - 0.5), 0)
+
+    return np.array([min_coordinates, max_coordinates])
 
 
 files = ['images/input/left-2.jpg',
@@ -148,12 +170,19 @@ for option in options:
     img1 = plt.imread("images/input/left-1.jpg")
     img2 = plt.imread("images/input/middle.jpg")
     img3 = plt.imread("images/input/right-1.jpg")
-    new_img1, new_img_corner_coordinates = warp(img1, homography_matrix1_2)
-    new_img3, new_img_corner_coordinates = warp(img3, homography_matrix3_2)
-    new_img2 = expand(img2).astype(np.int)
+    new_img1, new_img1_corner_coordinates = warp(img1, homography_matrix1_2)
+    new_img3, new_img3_corner_coordinates = warp(img3, homography_matrix3_2)
+    new_img2, new_img2_corner_coordinates = expand(img2)
+
     blended = blend(new_img1, new_img2).astype(np.uint8)
     blended = blend(new_img3, blended).astype(np.uint8)
-    # plt.figure()
-    # plt.imshow(blended)
-    # plt.show()
-    plt.imsave(f'images/output/blended_images_3_points_{option[0]}_wrong_{option[1]}__normalized_{option[2]}_noise_{option[3]}.png', blended)
+
+    new_img_corner_coordinates = find_range(new_img1_corner_coordinates, new_img2_corner_coordinates,
+                                            new_img3_corner_coordinates)
+    blended = blended[new_img_corner_coordinates[0, 0]:new_img_corner_coordinates[1, 0],
+              new_img_corner_coordinates[0, 1]:new_img_corner_coordinates[1, 1]]
+
+    interpolated = interpolate(blended)
+    plt.imsave(
+        f'images/output/blended_images_3_points_{option[0]}_wrong_{option[1]}__normalized_{option[2]}_noise_{option[3]}.png',
+        interpolated)
