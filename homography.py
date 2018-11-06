@@ -29,7 +29,7 @@ def create_A_matrix_columns(im1point, im2point):
 def create_A_matrix(im1Points, im2Points):
     print('Creating A matrix')
     A = []
-    for i in range(len(selected_points[0])):
+    for i in range(option[0]):
         cols = create_A_matrix_columns(im1Points[i], im2Points[i])
 
         A.append(cols)
@@ -60,7 +60,7 @@ def warp(image, H):
     print('Warping')
 
     y, x = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
-    coordinate_matrix = np.array([np.concatenate(np.stack((x, y), axis=2))],dtype=np.float)
+    coordinate_matrix = np.array([np.concatenate(np.stack((x, y), axis=2))], dtype=np.float)
     new_coordinates = np.reshape(cv2.perspectiveTransform(coordinate_matrix, H), (image.shape[0], image.shape[1], 2))
 
     new_img = np.zeros(BLENDED_IMAGE_SIZE)
@@ -69,8 +69,13 @@ def warp(image, H):
     for x in range(image.shape[0]):
         for y in range(image.shape[1]):
             new_coordinate = new_coordinates[x, y] + [left_x_min_coordinate, left_y_min_coordinate]
-            new_img[int(new_coordinate[0]), int(new_coordinate[1])] = image[x, y]
-    return new_img.astype(np.uint8)
+            if 0 <= int(new_coordinate[0]) < BLENDED_IMAGE_SIZE[0] and 0 <= int(new_coordinate[1]) < BLENDED_IMAGE_SIZE[1]:
+                new_img[int(new_coordinate[0]), int(new_coordinate[1])] = image[x, y]
+
+    corner_coordinates = np.float32(
+        [[0, 0], [0, image.shape[1]], [image.shape[0], image.shape[1]], [image.shape[0], 0]]).reshape(-1, 1, 2)
+    new_corner_coordinates = cv2.perspectiveTransform(corner_coordinates, H)
+    return new_img.astype(np.uint8), new_corner_coordinates
 
 
 def interpolate(new_image):
@@ -110,27 +115,45 @@ files = ['images/input/left-2.jpg',
          'images/input/right-1.jpg',
          'images/input/right-2.jpg', ]
 BLENDED_IMAGE_SIZE = [2000, 4000, 3]
-
+NUMBER_OF_POINTS = [5, 12]
 selected_points = pickle.load(open('tmp/selected_points.p', 'rb'))
-# im1Points = np.array(selected_points[0])
-# im2Points = np.array(selected_points[1])
 
-im1Points = np.flip(selected_points[1], axis=1)
-im2Points = np.flip(selected_points[2], axis=1)
+# # of points, # of wrong points, normalization, gaussian_noise
+options = [
+    [5, 0, True, 0],
+    [12, 0, True, 0],
+    [12, 3, False, 0],
+    [12, 3, True, 0],
+    [12, 5, True, 0],
+    [12, 0, True, 1],
+    [12, 0, True, 5],
+    [12, 0, True, 10],
+    [12, 0, False, 1],
+    [12, 0, False, 5],
+    [12, 0, False, 10],
+]
 
-homography_matrix = computeH(im1Points, im2Points)
-print(homography_matrix - cv2.findHomography(im1Points, im2Points)[0])
-img1 = plt.imread("images/input/left-1.jpg")
-img2 = plt.imread("images/input/middle.jpg")
+for option in options:
+    im1Points = np.flip(selected_points[1][:option[0]], axis=1)
+    im2Points = np.flip(selected_points[2][:option[0]], axis=1) + np.random.normal(loc=0, scale=option[3])
+    im3Points = np.flip(selected_points[3][:option[0]], axis=1)
+    # If there is wrong match
+    if option[1] > 0:
+        shuffle_indexes_1 = np.random.permutation(np.arange(option[0]))[:option[1]]
+        shuffle_indexes_2 = np.random.permutation(shuffle_indexes_1)
+        im2Points[shuffle_indexes_1] = im2Points[shuffle_indexes_2]
+    homography_matrix1_2 = computeH(im1Points, im2Points, normalize=option[2])
+    homography_matrix3_2 = computeH(im3Points, im2Points, normalize=option[2])
 
-new_img1 = warp(img1, homography_matrix)
-# new_img1 = cv2.warpPerspective(img1, homography_matrix, (img1.shape[1], img1.shape[0]))
-# new_img1 = interpolate(new_img1)
-plt.imshow(new_img1)
-plt.show()
-print(img1.shape)
-#
-# new_img2 = expand(img2).astype(np.int)
-# blended = blend(new_img1, new_img2).astype(np.int)
-# plt.imshow(blended)
-# plt.show()
+    img1 = plt.imread("images/input/left-1.jpg")
+    img2 = plt.imread("images/input/middle.jpg")
+    img3 = plt.imread("images/input/right-1.jpg")
+    new_img1, new_img_corner_coordinates = warp(img1, homography_matrix1_2)
+    new_img3, new_img_corner_coordinates = warp(img3, homography_matrix3_2)
+    new_img2 = expand(img2).astype(np.int)
+    blended = blend(new_img1, new_img2).astype(np.uint8)
+    blended = blend(new_img3, blended).astype(np.uint8)
+    # plt.figure()
+    # plt.imshow(blended)
+    # plt.show()
+    plt.imsave(f'images/output/blended_images_3_points_{option[0]}_wrong_{option[1]}__normalized_{option[2]}_noise_{option[3]}.png', blended)
