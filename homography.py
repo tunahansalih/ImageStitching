@@ -137,7 +137,6 @@ files = ['images/input/left-2.jpg',
          'images/input/right-1.jpg',
          'images/input/right-2.jpg', ]
 BLENDED_IMAGE_SIZE = [2000, 4000, 3]
-NUMBER_OF_POINTS = [5, 12]
 selected_points = pickle.load(open('tmp/selected_points.p', 'rb'))
 
 # # of points, # of wrong points, normalization, gaussian_noise
@@ -186,3 +185,43 @@ for option in options:
     plt.imsave(
         f'images/output/blended_images_3_points_{option[0]}_wrong_{option[1]}__normalized_{option[2]}_noise_{option[3]}.png',
         interpolated)
+
+option[0] = 12
+im0Points = np.flip(selected_points[0], axis=1)
+im1Points = np.flip(selected_points[1], axis=1)
+im2Points = np.flip(selected_points[2], axis=1)
+im3Points = np.flip(selected_points[3], axis=1)
+im4Points = np.flip(selected_points[4], axis=1)
+
+homography_matrix0_2 = computeH(im0Points, im2Points, normalize=True)
+homography_matrix1_2 = computeH(im1Points, im2Points, normalize=True)
+homography_matrix3_2 = computeH(im3Points, im2Points, normalize=True)
+homography_matrix4_2 = computeH(im4Points, im2Points, normalize=True)
+
+img0 = plt.imread("images/input/left-2.jpg")
+img1 = plt.imread("images/input/left-1.jpg")
+img2 = plt.imread("images/input/middle.jpg")
+img3 = plt.imread("images/input/right-1.jpg")
+img4 = plt.imread("images/input/right-2.jpg")
+
+new_img0, new_img0_corner_coordinates = warp(img0, homography_matrix0_2)
+new_img1, new_img1_corner_coordinates = warp(img1, homography_matrix1_2)
+new_img3, new_img3_corner_coordinates = warp(img3, homography_matrix3_2)
+new_img4, new_img4_corner_coordinates = warp(img4, homography_matrix4_2)
+new_img2, new_img2_corner_coordinates = expand(img2)
+
+blended = blend(new_img0, new_img2).astype(np.uint8)
+blended = blend(new_img1, blended).astype(np.uint8)
+blended = blend(new_img3, blended).astype(np.uint8)
+blended = blend(new_img4, blended).astype(np.uint8)
+
+new_img_corner_coordinates = find_range(new_img0_corner_coordinates, new_img1_corner_coordinates,
+                                        new_img2_corner_coordinates, new_img3_corner_coordinates,
+                                        new_img4_corner_coordinates)
+blended = blended[new_img_corner_coordinates[0, 0]:new_img_corner_coordinates[1, 0],
+          new_img_corner_coordinates[0, 1]:new_img_corner_coordinates[1, 1]]
+
+interpolated = interpolate(blended)
+plt.imsave(
+    f'images/output/blended_images_5_points_12_wrong_0__normalized_True_noise_0.png',
+    interpolated)
